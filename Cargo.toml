@@ -1,0 +1,15 @@
+[package]
+name = "bbsbot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.7"
+eyre = "0.6"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "fs", "process"] }
+dotenvy = "0.15.7"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = "0.1"
+teloxide = "0.12"
