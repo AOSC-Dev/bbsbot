@@ -1,12 +1,35 @@
-use axum::{http::StatusCode, response::IntoResponse, routing::post, Json, Router};
-use serde_json::Value;
-use tracing::level_filters::LevelFilter;
+use std::env::{self};
+
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use eyre::OptionExt;
+use serde::Deserialize;
+use teloxide::{
+    payloads::SendMessageSetters,
+    requests::Requester,
+    types::{ChatId, ParseMode},
+    Bot,
+};
+use tokio::fs;
+use tracing::{error, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+
+#[derive(Debug, Deserialize)]
+struct Config {
+    webhook: String,
+    send_telegram_ids: Vec<i64>,
+    token: String,
+}
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     dotenvy::dotenv().ok();
+
+    let path = env::args().nth(1).ok_or_eyre("Arg path is not set")?;
     let env_log = EnvFilter::try_from_default_env();
+    let config = fs::read_to_string(path).await?;
+    let config: Config = toml::from_str(&config)?;
+
+    let bot = Bot::new(&config.token);
 
     if let Ok(filter) = env_log {
         tracing_subscriber::registry()
@@ -34,11 +57,11 @@ async fn main() -> eyre::Result<()> {
             .init();
     }
 
-    let webhook_uri = std::env::var("bbsbot_webhook")?;
+    let app = Router::new()
+        .route("/", post(handler))
+        .with_state((bot, config.send_telegram_ids));
 
-    let app = Router::new().route("/", post(handler));
-
-    let listener = tokio::net::TcpListener::bind(webhook_uri).await?;
+    let listener = tokio::net::TcpListener::bind(config.webhook).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
@@ -67,8 +90,42 @@ where
     }
 }
 
-async fn handler(Json(json): Json<Value>) -> Result<(), EyreError> {
-    dbg!(json);
+#[derive(Deserialize)]
+enum Event {
+    #[serde(rename = "ping")]
+    Ping,
+    #[serde(rename = "topic")]
+    Topic { title: String, id: u64 },
+}
+
+async fn handler(
+    State((bot, list)): State<(Bot, Vec<i64>)>,
+    Json(json): Json<Event>,
+) -> Result<(), EyreError> {
+    match json {
+        Event::Ping { .. } => return Ok(()),
+        Event::Topic { title, id } => {
+            tokio::spawn(async move {
+                for i in list {
+                    let res = bot
+                        .send_message(
+                            ChatId(i),
+                            format!(
+                                r#"<a href="https://bbs.aosc.io/t/topic/{}">{}</a>"#,
+                                id, title
+                            ),
+                        )
+                        .parse_mode(ParseMode::Html)
+                        .disable_web_page_preview(true)
+                        .await;
+
+                    if let Err(e) = res {
+                        error!("{e}");
+                    }
+                }
+            });
+        }
+    }
 
     Ok(())
 }
