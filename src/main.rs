@@ -111,7 +111,7 @@ async fn handler(
                         .send_message(
                             ChatId(i),
                             format!(
-                                r#"<a href="https://bbs.aosc.io/t/topic/{}">{}</a>"#,
+                                "<b>AOSC BBS</b>\n<a href=\"https://bbs.aosc.io/t/topic/{}\">{}</a>",
                                 id, title
                             ),
                         )
