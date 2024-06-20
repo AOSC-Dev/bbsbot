@@ -1,4 +1,4 @@
-use std::env::{self};
+use std::{env, sync::Arc};
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use eyre::OptionExt;
@@ -59,7 +59,7 @@ async fn main() -> eyre::Result<()> {
 
     let app = Router::new()
         .route("/", post(handler))
-        .with_state((bot, config.send_telegram_ids));
+        .with_state((Arc::new(bot), config.send_telegram_ids));
 
     let listener = tokio::net::TcpListener::bind(config.webhook).await?;
     axum::serve(listener, app).await?;
@@ -99,29 +99,34 @@ enum Event {
 }
 
 async fn handler(
-    State((bot, list)): State<(Bot, Vec<i64>)>,
+    State((bot, list)): State<(Arc<Bot>, Vec<i64>)>,
     Json(json): Json<Event>,
 ) -> Result<(), EyreError> {
     match json {
         Event::Ping { .. } => return Ok(()),
         Event::Topic { title, id } => {
+            let title = Arc::new(title);
             tokio::spawn(async move {
                 for i in list {
-                    let res = bot
+                    let botc = bot.clone();
+                    let tc = title.clone();
+                    tokio::spawn(async move {
+                        let res = botc
                         .send_message(
                             ChatId(i),
                             format!(
                                 "<b>AOSC BBS</b>\n<a href=\"https://bbs.aosc.io/t/topic/{}\">{}</a>",
-                                id, title
+                                id, tc.clone()
                             ),
                         )
                         .parse_mode(ParseMode::Html)
                         .disable_web_page_preview(true)
                         .await;
 
-                    if let Err(e) = res {
-                        error!("{e}");
-                    }
+                        if let Err(e) = res {
+                            error!("{e}");
+                        }
+                    });
                 }
             });
         }
