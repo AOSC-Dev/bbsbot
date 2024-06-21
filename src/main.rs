@@ -1,7 +1,7 @@
 use std::{env, sync::Arc};
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
-use eyre::OptionExt;
+use eyre::{eyre, OptionExt};
 use serde::Deserialize;
 use serde_json::Value;
 use teloxide::{
@@ -92,48 +92,50 @@ where
 }
 
 #[derive(Deserialize)]
-enum Event {
-    #[serde(rename = "ping")]
-    Ping,
-    #[serde(rename = "topic")]
-    Topic { title: String, id: u64 },
+struct Topic {
+    title: String,
+    id: u64,
 }
 
 async fn handler(
     State((bot, list)): State<(Arc<Bot>, Vec<i64>)>,
     Json(json): Json<Value>,
 ) -> Result<(), EyreError> {
-    dbg!(&json);
-    let json: Event = serde_json::from_value(json)?;
-    match json {
-        Event::Ping { .. } => return Ok(()),
-        Event::Topic { title, id } => {
-            let title = Arc::new(title);
-            tokio::spawn(async move {
-                for i in list {
-                    let botc = bot.clone();
-                    let tc = title.clone();
-                    tokio::spawn(async move {
-                        let res = botc
-                        .send_message(
-                            ChatId(i),
-                            format!(
-                                "<b>AOSC BBS</b>\n<a href=\"https://bbs.aosc.io/t/topic/{}\">{}</a>",
-                                id, tc.clone()
-                            ),
-                        )
-                        .parse_mode(ParseMode::Html)
-                        .disable_web_page_preview(true)
-                        .await;
+    if let Some(v) = json.as_object().and_then(|x| x.get("ping")) {
+        if v.as_str().map(|x| x == "OK").unwrap_or(false) {
+            return Ok(());
+        } else {
+            return Err(eyre!("Ping is not ok").into());
+        }
+    }
 
-                        if let Err(e) = res {
-                            error!("{e}");
-                        }
-                    });
+    let Topic { title, id } = serde_json::from_value(json)?;
+    let title = Arc::new(title);
+
+    tokio::spawn(async move {
+        for i in list {
+            let botc = bot.clone();
+            let tc = title.clone();
+            tokio::spawn(async move {
+                let res = botc
+                    .send_message(
+                        ChatId(i),
+                        format!(
+                            "<b>AOSC BBS</b>\n<a href=\"https://bbs.aosc.io/t/topic/{}\">{}</a>",
+                            id,
+                            tc.clone()
+                        ),
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .disable_web_page_preview(true)
+                    .await;
+
+                if let Err(e) = res {
+                    error!("{e}");
                 }
             });
         }
-    }
+    });
 
     Ok(())
 }
