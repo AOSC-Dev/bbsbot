@@ -3,6 +3,7 @@ use std::{env, sync::Arc};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use eyre::OptionExt;
 use serde::Deserialize;
+use serde_json::Value;
 use teloxide::{
     payloads::SendMessageSetters,
     requests::Requester,
@@ -100,8 +101,10 @@ enum Event {
 
 async fn handler(
     State((bot, list)): State<(Arc<Bot>, Vec<i64>)>,
-    Json(json): Json<Event>,
+    Json(json): Json<Value>,
 ) -> Result<(), EyreError> {
+    dbg!(&json);
+    let json: Event = serde_json::from_value(json)?;
     match json {
         Event::Ping { .. } => return Ok(()),
         Event::Topic { title, id } => {
