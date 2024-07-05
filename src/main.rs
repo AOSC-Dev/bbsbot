@@ -102,7 +102,7 @@ async fn handler(
     State((bot, list)): State<(Arc<Bot>, Vec<i64>)>,
     Json(json): Json<Value>,
 ) -> Result<(), EyreError> {
-    info!("Recv message: {json:?}");
+    info!("Recv message: {json:#?}");
     if let Some(v) = json.as_object().and_then(|x| x.get("ping")) {
         if v.as_str().map(|x| x == "OK").unwrap_or(false) {
             return Ok(());
