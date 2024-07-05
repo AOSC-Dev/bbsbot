@@ -1,4 +1,11 @@
-use std::{env, fmt::Display, sync::Arc};
+use std::{
+    env,
+    fmt::Display,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use eyre::{eyre, OptionExt};
@@ -58,9 +65,13 @@ async fn main() -> eyre::Result<()> {
             .init();
     }
 
-    let app = Router::new()
-        .route("/", post(handler))
-        .with_state((Arc::new(bot), config.send_telegram_ids));
+    let newest_topic = AtomicU64::new(0);
+
+    let app = Router::new().route("/", post(handler)).with_state((
+        Arc::new(bot),
+        config.send_telegram_ids,
+        Arc::new(newest_topic),
+    ));
 
     let listener = tokio::net::TcpListener::bind(config.webhook).await?;
     axum::serve(listener, app).await?;
@@ -99,7 +110,7 @@ struct Topic {
 }
 
 async fn handler(
-    State((bot, list)): State<(Arc<Bot>, Vec<i64>)>,
+    State((bot, list, newest_topic)): State<(Arc<Bot>, Vec<i64>, Arc<AtomicU64>)>,
     Json(json): Json<Value>,
 ) -> Result<(), EyreError> {
     info!("Recv message: {json:#?}");
@@ -115,6 +126,17 @@ async fn handler(
 
     if let Some(v) = json.and_then(|x| x.get("topic")) {
         let Topic { title, id } = serde_json::from_value(v.clone())?;
+
+        // Workaround discourse bug (Push old topics from time to time)
+        let n = newest_topic.load(Ordering::SeqCst);
+        if id <= n {
+            info!("Topic id is not newer than the latest: {} vs {}", id, n);
+            return Ok(());
+        } else {
+            newest_topic.store(id, Ordering::SeqCst);
+            info!("Newest topic: {}", id);
+        }
+
         let title = Arc::new(title);
 
         tokio::spawn(async move {
