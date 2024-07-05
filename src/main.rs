@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::{env, fmt::Display, sync::Arc};
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
 use eyre::{eyre, OptionExt};
@@ -84,9 +84,10 @@ impl IntoResponse for EyreError {
 
 impl<E> From<E> for EyreError
 where
-    E: Into<eyre::Error>,
+    E: Into<eyre::Error> + Display,
 {
     fn from(err: E) -> Self {
+        error!("{err}");
         EyreError { err: err.into() }
     }
 }
