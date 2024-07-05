@@ -11,7 +11,7 @@ use teloxide::{
     Bot,
 };
 use tokio::fs;
-use tracing::{error, level_filters::LevelFilter};
+use tracing::{error, info, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 #[derive(Debug, Deserialize)]
@@ -101,6 +101,7 @@ async fn handler(
     State((bot, list)): State<(Arc<Bot>, Vec<i64>)>,
     Json(json): Json<Value>,
 ) -> Result<(), EyreError> {
+    info!("Recv message: {json:?}");
     if let Some(v) = json.as_object().and_then(|x| x.get("ping")) {
         if v.as_str().map(|x| x == "OK").unwrap_or(false) {
             return Ok(());
