@@ -103,7 +103,9 @@ async fn handler(
     Json(json): Json<Value>,
 ) -> Result<(), EyreError> {
     info!("Recv message: {json:#?}");
-    if let Some(v) = json.as_object().and_then(|x| x.get("ping")) {
+    let json = json.as_object();
+
+    if let Some(v) = json.and_then(|x| x.get("ping")) {
         if v.as_str().map(|x| x == "OK").unwrap_or(false) {
             return Ok(());
         } else {
@@ -111,33 +113,35 @@ async fn handler(
         }
     }
 
-    let Topic { title, id } = serde_json::from_value(json)?;
-    let title = Arc::new(title);
+    if let Some(v) = json.and_then(|x| x.get("topic")) {
+        let Topic { title, id } = serde_json::from_value(v.clone())?;
+        let title = Arc::new(title);
 
-    tokio::spawn(async move {
-        for i in list {
-            let botc = bot.clone();
-            let tc = title.clone();
-            tokio::spawn(async move {
-                let res = botc
-                    .send_message(
-                        ChatId(i),
-                        format!(
-                            "<b>AOSC BBS</b>\n<a href=\"https://bbs.aosc.io/t/topic/{}\">{}</a>",
-                            id,
-                            tc.clone()
-                        ),
-                    )
-                    .parse_mode(ParseMode::Html)
-                    .disable_web_page_preview(true)
-                    .await;
+        tokio::spawn(async move {
+            for i in list {
+                let botc = bot.clone();
+                let tc = title.clone();
+                tokio::spawn(async move {
+                    let res = botc
+                        .send_message(
+                            ChatId(i),
+                            format!(
+                                "<b>AOSC BBS</b>\n<a href=\"https://bbs.aosc.io/t/topic/{}\">{}</a>",
+                                id,
+                                tc.clone()
+                            ),
+                        )
+                        .parse_mode(ParseMode::Html)
+                        .disable_web_page_preview(true)
+                        .await;
 
-                if let Err(e) = res {
-                    error!("{e}");
-                }
-            });
-        }
-    });
+                    if let Err(e) = res {
+                        error!("{e}");
+                    }
+                });
+            }
+        });
+    }
 
     Ok(())
 }
