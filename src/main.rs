@@ -105,6 +105,7 @@ where
 
 #[derive(Deserialize)]
 struct Topic {
+    archetype: String,
     title: String,
     id: u64,
 }
@@ -125,7 +126,7 @@ async fn handler(
     }
 
     if let Some(v) = json.and_then(|x| x.get("topic")) {
-        let Topic { title, id } = serde_json::from_value(v.clone())?;
+        let Topic {archetype, title, id } = serde_json::from_value(v.clone())?;
 
         // Workaround discourse bug (Push old topics from time to time)
         let n = newest_topic.load(Ordering::SeqCst);
@@ -135,6 +136,10 @@ async fn handler(
         } else {
             newest_topic.store(id, Ordering::SeqCst);
             info!("Newest topic: {}", id);
+        }
+
+        if archetype == "private_message" {
+            return Ok(());
         }
 
         let title = Arc::new(title);
