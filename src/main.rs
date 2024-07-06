@@ -28,6 +28,13 @@ struct Config {
     token: String,
 }
 
+#[derive(Clone)]
+struct AppState {
+    bot: Arc<Bot>,
+    list: Vec<i64>,
+    newest_topic: Arc<AtomicU64>,
+}
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     dotenvy::dotenv().ok();
@@ -37,7 +44,7 @@ async fn main() -> eyre::Result<()> {
     let config = fs::read_to_string(path).await?;
     let config: Config = toml::from_str(&config)?;
 
-    let bot = Bot::new(&config.token);
+    let bot = Arc::new(Bot::new(&config.token));
 
     if let Ok(filter) = env_log {
         tracing_subscriber::registry()
@@ -65,13 +72,15 @@ async fn main() -> eyre::Result<()> {
             .init();
     }
 
-    let newest_topic = AtomicU64::new(0);
+    let newest_topic = Arc::new(AtomicU64::new(0));
 
-    let app = Router::new().route("/", post(handler)).with_state((
-        Arc::new(bot),
-        config.send_telegram_ids,
-        Arc::new(newest_topic),
-    ));
+    let app = Router::new()
+        .route("/", post(handler))
+        .with_state(AppState {
+            bot,
+            list: config.send_telegram_ids,
+            newest_topic,
+        });
 
     let listener = tokio::net::TcpListener::bind(config.webhook).await?;
     axum::serve(listener, app).await?;
@@ -110,12 +119,15 @@ struct Topic {
     id: u64,
 }
 
-async fn handler(
-    State((bot, list, newest_topic)): State<(Arc<Bot>, Vec<i64>, Arc<AtomicU64>)>,
-    Json(json): Json<Value>,
-) -> Result<(), EyreError> {
+async fn handler(State(state): State<AppState>, Json(json): Json<Value>) -> Result<(), EyreError> {
     info!("Recv message: {json:#?}");
     let json = json.as_object();
+
+    let AppState {
+        bot,
+        list,
+        newest_topic,
+    } = state;
 
     if let Some(v) = json.and_then(|x| x.get("ping")) {
         if v.as_str().map(|x| x == "OK").unwrap_or(false) {
@@ -126,7 +138,11 @@ async fn handler(
     }
 
     if let Some(v) = json.and_then(|x| x.get("topic")) {
-        let Topic {archetype, title, id } = serde_json::from_value(v.clone())?;
+        let Topic {
+            archetype,
+            title,
+            id,
+        } = serde_json::from_value(v.clone())?;
 
         // Workaround discourse bug (Push old topics from time to time)
         let n = newest_topic.load(Ordering::SeqCst);
