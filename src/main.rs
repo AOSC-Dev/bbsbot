@@ -7,7 +7,13 @@ use std::{
     },
 };
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::post,
+    Json, Router,
+};
 use eyre::{eyre, OptionExt};
 use serde::Deserialize;
 use serde_json::Value;
@@ -119,8 +125,13 @@ struct Topic {
     id: u64,
 }
 
-async fn handler(State(state): State<AppState>, Json(json): Json<Value>) -> Result<(), EyreError> {
+async fn handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(json): Json<Value>,
+) -> Result<(), EyreError> {
     info!("Recv message: {json:#?}");
+    info!("headers: {headers:#?}");
     let json = json.as_object();
 
     let AppState {
